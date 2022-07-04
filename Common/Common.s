@@ -1,6 +1,12 @@
 ################################################################################
 # Macros
 ################################################################################
+# Loads an address into ctr register and then branches and links to that address
+# Questions: 
+#   * Why is the counter register used here?
+# Arguments: 
+#   1: register that can be overridden with an address
+#   2: the address
 .macro branchl reg, address
 lis \reg, \address @h
 ori \reg,\reg,\address @l
@@ -8,6 +14,12 @@ mtctr \reg
 bctrl
 .endm
 
+# Same as above, but preserving the link register as it is before the macro call
+# Questions: 
+#   * Why is the counter register used here?
+# Arguments: 
+#   1: register that can be overridden with an address
+#   2: the address
 .macro branch reg, address
 lis \reg, \address @h
 ori \reg,\reg,\address @l
@@ -15,11 +27,24 @@ mtctr \reg
 bctr
 .endm
 
+# Loads an address into a register. Loads the first 2 bytes (high) and then does and or for the low 2 bytes.
+# Questions:
+#   * Register passed in has to be zeroed right? Or does this already zero the bottom for you?
+# Arguments:
+#   1: The register to load the address into
+#   2: The address
 .macro load reg, address
 lis \reg, \address @h
 ori \reg, \reg, \address @l
 .endm
 
+# Loads the contents of an address into a floating point register
+# Questions:
+#   * Why does this need to go onto the offset from the stack pointer?
+# Arguments:
+#   1: The floating point register
+#   2: The normal register to hold the address
+#   3: The address
 .macro loadf regf,reg,address
 lis \reg, \address @h
 ori \reg, \reg, \address @l
@@ -27,35 +52,56 @@ stw \reg,-0x4(sp)
 lfs \regf,-0x4(sp)
 .endm
 
+# Loads a word from memory into a register in place
 .macro loadwz reg, address
 lis \reg, \address @h
 ori \reg, \reg, \address @l
 lwz \reg, 0(\reg)
 .endm
 
+# Loads a byte from memory into a register in place
 .macro loadbz reg, address
 lis \reg, \address @h
 ori \reg, \reg, \address @l
 lbz \reg, 0(\reg)
 .endm
 
+# No idea... does not seem used
 .macro bp
 branchl r12, 0x8021b2d8
 .endm
 
 .set BKP_FREE_SPACE_OFFSET, 0x38 # This is where the free space in our stack starts
 
+# Backs up r20-r31 into memory at the BKP_FREE_SPACE_OFFSET + the amount specified by the space argument
+# Questions:
+#   * Why is this an optional argument? Would this even work with a different value since r20 is hardcoded as the start?
+#   * Could you just make a generic function that takes the register and then backs up all registers higher than it?
+# Arguments:
+#   1: (Optional) amount of space needed to backup
 .macro backup space=0x78
+# moves lr contents to r0
 mflr r0
+# stores lr address at the top of the stack
 stw r0, 0x4(r1)
+# https://www.ibm.com/docs/en/aix/7.1?topic=set-stwu-stu-store-word-update-instruction
+# gist: stores contents of stack pointer (address of stack) into the offset location and then updates r1 with this new
+# offset location
 stwu r1,-(BKP_FREE_SPACE_OFFSET + \space)(r1)	# make space for 12 registers
+# Stores words (store multiple word) from r20 to r31 in the location above offset by 0x08
+#   Question: why the 0x8 offset? Could this just be 0 and adjust the space above?
 stmw r20,0x8(r1)
 .endm
 
+# Restores the 12 registers from memory that the above macro backs up
 .macro restore space=0x78
+# loads multiple words from r20 to r31
 lmw r20,0x8(r1)
+# loads the original link register stored in the original stack pointer location + 0x4 into r0
 lwz r0, (BKP_FREE_SPACE_OFFSET + 0x4 + \space)(r1)
+# moves the stack pointer back to where it originally was
 addi r1,r1,BKP_FREE_SPACE_OFFSET + \space	# release the space
+# move the contents of r0 back to the link register
 mtlr r0
 .endm
 
